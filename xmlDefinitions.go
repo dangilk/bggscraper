@@ -39,23 +39,61 @@ type Items struct {
 	Items []Item `xml:"item"`
 }
 
-//<item objecttype="thing" objectid="7865" subtype="boardgame" collid="1108162">
-//<name sortindex="1">10 Days in Africa</name>
-//<yearpublished>2003</yearpublished>
-//<image>//cf.geekdo-images.com/images/pic1229634.jpg</image>
-//<thumbnail>//cf.geekdo-images.com/images/pic1229634_t.jpg</thumbnail>
-////<stats minplayers="2" maxplayers="4" minplaytime="25" maxplaytime="25" playingtime="25" numowned="1938">
-////<rating value="8">
-////<usersrated value="1709"/>
-////<average value="6.56771"/>
-////<bayesaverage value="6.18959"/>
-////<stddev value="1.16497"/>
-////<median value="0"/>
-////</rating>
-////</stats>
-//<status own="1" prevowned="0" fortrade="0" want="0" wanttoplay="0" wanttobuy="0" wishlist="0" preordered="0" lastmodified="2007-10-12 22:51:58"/>
-//<numplays>21</numplays>
-//<comment>
-//Light filler and as a nice side effect you learn some African geography.
-//</comment>
-//</item>
+// forum list
+type ForumList struct {
+	Id int `xml:"id,attr"`
+	Forums []Forum `xml:"forum"`
+}
+
+type Forum struct {
+	Id int `xml:"id,attr"`
+	NumThreads int `xml:"numthreads,attr"`
+	NumPosts int `xml:"numposts,attr"`
+	Threads Threads `xml:"threads"`
+}
+
+type Threads struct {
+	Threads []Thread `xml:"thread"`
+}
+
+// Thread info
+type Thread struct {
+	Id int `xml:"id,attr"`
+	NumArticles int `xml:"numarticles,attr"`
+	Articles Articles `xml:"articles"`
+}
+
+type Articles struct {
+	Articles []Article `xml:"article"`
+}
+
+type Article struct {
+	Id int `xml:"id,attr"`
+	Author string `xml:"username,attr"`
+}
+
+// User info
+type User struct {
+	Id int `xml:"id,attr"`
+	Name string `xml:"name,attr"`
+	Buddies Buddies `xml:"buddies"`
+	Guilds Guilds `xml:"guilds"`
+}
+
+type Buddies struct {
+	Buddies []Buddy `xml:"buddy"`
+}
+
+type Buddy struct {
+	Id int `xml:"id,attr"`
+	Name string `xml:"name,attr"`
+}
+
+type Guilds struct {
+	Guilds []Guild `xml:"guild"`
+}
+
+type Guild struct {
+	Id int `xml:"id,attr"`
+	Name string `xml:"name,attr"`
+}

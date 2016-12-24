@@ -11,6 +11,7 @@ import (
 )
 
 var sqlDb *sql.DB
+var baseUrl = "https://www.boardgamegeek.com/xmlapi2"
 
 func main() {
 	openDb()
@@ -19,11 +20,61 @@ func main() {
 	fetch()
 	closeDb()
 
-	getXml()
+	getUsersFromForumList(1)
 }
 
-func getXml() {
-	response, err := http.Get("http://boardgamegeek.com/xmlapi/collection/mkgray")
+// get a forumlist, then get its forums, then get its threads, then get its articles, and finally get users from articles
+func getUsersFromForumList(forumId int) {
+	baseForumListUrl := baseUrl + "/forumlist?id=%d&type=thing"
+	forumListUrl := fmt.Sprintf(baseForumListUrl, forumId)
+	println(forumListUrl)
+	getXml(forumListUrl, processForumList)
+}
+
+func processForumList(bytes []byte) {
+	var forumList ForumList
+	err := xml.Unmarshal(bytes, &forumList)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _,forum := range forumList.Forums {
+		baseForumUrl := baseUrl + "/forum?id=%d"
+		forumUrl := fmt.Sprintf(baseForumUrl, forum.Id)
+		getXml(forumUrl, processForum)
+	}
+}
+
+func processForum(bytes []byte) {
+	var forum Forum
+	err := xml.Unmarshal(bytes, &forum)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _,thread := range forum.Threads.Threads {
+		baseThreadUrl := baseUrl + "/thread?id=%d"
+		threadUrl := fmt.Sprintf(baseThreadUrl, thread.Id)
+		getXml(threadUrl, processThread)
+	}
+}
+
+func processThread(bytes []byte) {
+	var thread Thread
+	err := xml.Unmarshal(bytes, &thread)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _,article := range thread.Articles.Articles {
+		fmt.Println(article.Author)
+	}
+}
+
+type XmlProcessor func(bytes []byte)
+
+func getXml(url string, processor XmlProcessor) {
+	response, err := http.Get(url)
 	if err != nil {
 		log.Fatal(err)
 	} else {
@@ -32,12 +83,7 @@ func getXml() {
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			var items Items
-			err := xml.Unmarshal(body, &items)
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Println(items)
+			processor(body)
 		}
 	}
 }
