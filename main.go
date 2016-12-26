@@ -21,9 +21,10 @@ func main() {
 	setupDb()
 	//insert()
 	fetch()
-	closeDb()
+
 
 	getUsersFromForumList(1)
+	closeDb()
 }
 
 // get a forumlist, then get its forums, then get its threads, then get its articles, and finally get users from articles
@@ -106,6 +107,7 @@ func createCollectionProcessor(user User) XmlProcessor {
 		for _,item := range collectionItems.Items {
 			info := fmt.Sprintf("user %s has item %s in collection", user.Name, item.Name)
 			fmt.Println(info)
+			insertCollection(user, item)
 		}
 	}
 }
@@ -152,9 +154,68 @@ func closeDb() {
 	sqlDb.Close()
 }
 
+func insertCollection(user User, collection CollectionItem) {
+	fmt.Println("insert collection")
+	stmt, err := sqlDb.Prepare("INSERT INTO users(userId, userName, gameName, yearPublished," +
+		"numPlays, subType, own, prevOwned, forTrade, want, wantToPlay, wantToBuy, " +
+		"wishList, wishListPriority, preOrdered, lastModified, minPlayers, maxPlayers, minPlaytime, maxPlaytime," +
+		"playingTime, numOwned, userRating, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
+		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("inserted prepared")
+
+	stmt.Exec(user.Id, user.Name, collection.Name, collection.YearPublished, collection.NumPlays, collection.SubType,
+	collection.Status.Own, collection.Status.PrevOwned, collection.Status.ForTrade, collection.Status.Want,
+	collection.Status.WantToPlay, collection.Status.WantToBuy, collection.Status.WishList, collection.Status.WishListPriority,
+	collection.Status.PreOrdered, collection.Status.LastModified, collection.Stats.MinPlayers, collection.Stats.MaxPlayers,
+	collection.Stats.MinPlaytime, collection.Stats.MaxPlaytime, collection.Stats.PlayingTime, collection.Stats.NumOwned,
+	collection.Stats.Rating.Value, collection.Stats.Rating.UsersRated, collection.Stats.Rating.AverageRating,
+	collection.Stats.Rating.BayesAverageRating, collection.Stats.Rating.StdDevRating, collection.Stats.Rating.MedianRating)
+
+	fmt.Println("inserted collection")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func setupDb() {
-	_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS users(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
-		"userId INT NOT NULL, userName VARCHAR(200) NOT NULL);")
+	//_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS users(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
+	//	"userId INT NOT NULL, userName VARCHAR(200) NOT NULL);")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_collections(" +
+		"id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
+		"userId INT NOT NULL, " +
+		"userName VARCHAR(200) NOT NULL, " +
+		"gameName VARCHAR(1000) NOT NULL, " +
+		"yearPublished INT, " +
+		"numPlays INT, " +
+		"subType VARCHAR(100), " +
+		"own BOOL, " +
+		"prevOwned BOOL, " +
+		"forTrade BOOL, " +
+		"want BOOL, " +
+		"wantToPlay BOOL, " +
+		"wantToBuy BOOL, " +
+		"wishList BOOL, " +
+		"wishListPriority INT, " +
+		"preOrdered BOOL, " +
+		"lastModified VARCHAR(100), " +
+		"minPlayers INT, " +
+		"maxPlayers INT, " +
+		"minPlaytime INT, " +
+		"maxPlaytime INT, " +
+		"playingTime INT, " +
+		"numOwned INT, " +
+		"userRating DOUBLE, " +
+		"ratingCount INT, " +
+		"averageRating DOUBLE, " +
+		"bayesAverageRating DOUBLE, " +
+		"stdDevRating DOUBLE, " +
+		"medianRating DOUBLE);")
 	if err != nil {
 		log.Fatal(err)
 	}
