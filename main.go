@@ -8,10 +8,13 @@ import (
 	"io/ioutil"
 	"encoding/xml"
 	"fmt"
+	"time"
 )
 
 var sqlDb *sql.DB
-var baseUrl = "https://www.boardgamegeek.com/xmlapi2"
+var baseUrlApi2 = "https://www.boardgamegeek.com/xmlapi2"
+var baseUrlApi1 = "https://www.boardgamegeek.com/xmlapi"
+var exploredUsers = make(map[int]bool)
 
 func main() {
 	openDb()
@@ -25,8 +28,7 @@ func main() {
 
 // get a forumlist, then get its forums, then get its threads, then get its articles, and finally get users from articles
 func getUsersFromForumList(forumId int) {
-	baseForumListUrl := baseUrl + "/forumlist?id=%d&type=thing"
-	forumListUrl := fmt.Sprintf(baseForumListUrl, forumId)
+	forumListUrl := fmt.Sprintf(baseUrlApi2 + "/forumlist?id=%d&type=thing", forumId)
 	println(forumListUrl)
 	getXml(forumListUrl, processForumList)
 }
@@ -37,10 +39,8 @@ func processForumList(bytes []byte) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	for _,forum := range forumList.Forums {
-		baseForumUrl := baseUrl + "/forum?id=%d"
-		forumUrl := fmt.Sprintf(baseForumUrl, forum.Id)
+		forumUrl := fmt.Sprintf(baseUrlApi2 + "/forum?id=%d", forum.Id)
 		getXml(forumUrl, processForum)
 	}
 }
@@ -51,10 +51,8 @@ func processForum(bytes []byte) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	for _,thread := range forum.Threads.Threads {
-		baseThreadUrl := baseUrl + "/thread?id=%d"
-		threadUrl := fmt.Sprintf(baseThreadUrl, thread.Id)
+		threadUrl := fmt.Sprintf(baseUrlApi2 + "/thread?id=%d", thread.Id)
 		getXml(threadUrl, processThread)
 	}
 }
@@ -65,9 +63,50 @@ func processThread(bytes []byte) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	for _,article := range thread.Articles.Articles {
-		fmt.Println(article.Author)
+		userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", article.Author)
+		getXml(userUrl, processUser)
+	}
+}
+
+func processUser(bytes []byte) {
+	var user User
+	err := xml.Unmarshal(bytes, &user)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, exists := exploredUsers[user.Id]; exists {
+		return
+	} else {
+		exploredUsers[user.Id] = true
+	}
+
+	// get the users collection
+	fmt.Println(user.Name)
+	collectionUrl := fmt.Sprintf(baseUrlApi1 + "/collection/%s", user.Name)
+	getXml(collectionUrl, createCollectionProcessor(user))
+
+
+	// explore user friends
+	for _,buddy := range user.Buddies.Buddies {
+		buddyUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", buddy.Name)
+		getXml(buddyUrl, processUser)
+	}
+
+
+}
+
+func createCollectionProcessor(user User) XmlProcessor {
+	return func (bytes []byte) {
+		var collectionItems CollectionItems
+		err := xml.Unmarshal(bytes, &collectionItems)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _,item := range collectionItems.Items {
+			info := fmt.Sprintf("user %s has item %s in collection", user.Name, item.Name)
+			fmt.Println(info)
+		}
 	}
 }
 
@@ -79,6 +118,12 @@ func getXml(url string, processor XmlProcessor) {
 		log.Fatal(err)
 	} else {
 		defer response.Body.Close()
+		if response.StatusCode == 202 {
+			fmt.Println("received 202 - waiting for retry")
+			time.Sleep(5 * time.Second)
+			getXml(url, processor)
+			return
+		}
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			log.Fatal(err)
@@ -108,14 +153,15 @@ func closeDb() {
 }
 
 func setupDb() {
-	_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS users(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, name VARCHAR(20));")
+	_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS users(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
+		"userId INT NOT NULL, userName VARCHAR(200) NOT NULL);")
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func insert() {
-	stmt, err := sqlDb.Prepare("INSERT INTO users(name) VALUES(?)")
+func insertUser(userId int, userName string) {
+	stmt, err := sqlDb.Prepare("INSERT INTO users(userId, userName) VALUES(?)")
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,5 +1,6 @@
 package main
 
+// collection items
 type UsersRated struct {
 	Value int `xml:"value,attr"`
 }
@@ -32,11 +33,28 @@ type Stats struct {
 	NumOwned int `xml:"numowned,attr"`
 	Rating Rating `xml:"rating"`
 }
-type Item struct {
-	Stats Stats `xml:"stats"`
+type Status struct {
+	Own int `xml:"own,attr"`
+	PrevOwned int `xml:"prevowned,attr"`
+	ForTrade int `xml:"fortrade,attr"`
+	Want int `xml:"want,attr"`
+	WantToPlay int `xml:"wanttoplay,attr"`
+	WantToBuy int `xml:"wanttobuy,attr"`
+	WishList int `xml:"wishlist,attr"`
+	WishListPriority int `xml:"wishlistpriority,attr"`
+	PreOrdered int `xml:"preordered,attr"`
+	LastModified string `xml:"lastmodified,attr"`
 }
-type Items struct {
-	Items []Item `xml:"item"`
+type CollectionItem struct {
+	Name string `xml:"name"`
+	Status Status `xml:"status"`
+	Stats Stats `xml:"stats"`
+	NumPlays int `xml:"numplays"`
+	YearPublished int `xml:"yearpublished"`
+	SubType string `xml:"subtype,attr"`
+}
+type CollectionItems struct {
+	Items []CollectionItem `xml:"item"`
 }
 
 // forum list
