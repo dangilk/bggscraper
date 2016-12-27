@@ -155,8 +155,7 @@ func closeDb() {
 }
 
 func insertCollection(user User, collection CollectionItem) {
-	fmt.Println("insert collection")
-	stmt, err := sqlDb.Prepare("INSERT INTO users(userId, userName, gameName, yearPublished," +
+	stmt, err := sqlDb.Prepare("INSERT INTO user_collections(userId, userName, gameName, yearPublished," +
 		"numPlays, subType, own, prevOwned, forTrade, want, wantToPlay, wantToBuy, " +
 		"wishList, wishListPriority, preOrdered, lastModified, minPlayers, maxPlayers, minPlaytime, maxPlaytime," +
 		"playingTime, numOwned, userRating, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
@@ -164,15 +163,14 @@ func insertCollection(user User, collection CollectionItem) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("inserted prepared")
 
-	stmt.Exec(user.Id, user.Name, collection.Name, collection.YearPublished, collection.NumPlays, collection.SubType,
+	_, err = stmt.Exec(user.Id, user.Name, collection.Name, collection.YearPublished, collection.NumPlays, collection.SubType,
 	collection.Status.Own, collection.Status.PrevOwned, collection.Status.ForTrade, collection.Status.Want,
 	collection.Status.WantToPlay, collection.Status.WantToBuy, collection.Status.WishList, collection.Status.WishListPriority,
 	collection.Status.PreOrdered, collection.Status.LastModified, collection.Stats.MinPlayers, collection.Stats.MaxPlayers,
 	collection.Stats.MinPlaytime, collection.Stats.MaxPlaytime, collection.Stats.PlayingTime, collection.Stats.NumOwned,
-	collection.Stats.Rating.Value, collection.Stats.Rating.UsersRated, collection.Stats.Rating.AverageRating,
-	collection.Stats.Rating.BayesAverageRating, collection.Stats.Rating.StdDevRating, collection.Stats.Rating.MedianRating)
+	collection.Stats.Rating.Value, collection.Stats.Rating.UsersRated.Value, collection.Stats.Rating.AverageRating.Value,
+	collection.Stats.Rating.BayesAverageRating.Value, collection.Stats.Rating.StdDevRating.Value, collection.Stats.Rating.MedianRating.Value)
 
 	fmt.Println("inserted collection")
 	if err != nil {
