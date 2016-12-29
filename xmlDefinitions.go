@@ -46,6 +46,8 @@ type Status struct {
 	LastModified string `xml:"lastmodified,attr"`
 }
 type CollectionItem struct {
+	Id int `xml:"collid,attr"`
+	ObjectId int `xml:"objectid,attr"`
 	Name string `xml:"name"`
 	Status Status `xml:"status"`
 	Stats Stats `xml:"stats"`

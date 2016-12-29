@@ -15,15 +15,20 @@ var sqlDb *sql.DB
 var baseUrlApi2 = "https://www.boardgamegeek.com/xmlapi2"
 var baseUrlApi1 = "https://www.boardgamegeek.com/xmlapi"
 var exploredUsers = make(map[int]bool)
+var collectionInsertStmt *sql.Stmt
+var gameMetaInsertStmt *sql.Stmt
 
 func main() {
 	openDb()
 	setupDb()
-	//insert()
 	fetch()
 
 
-	getUsersFromForumList(1)
+	for i := 1; i < 100; i++ {
+		getUsersFromForumList(i)
+	}
+
+	fmt.Println("all done!")
 	closeDb()
 }
 
@@ -35,46 +40,61 @@ func getUsersFromForumList(forumId int) {
 }
 
 func processForumList(bytes []byte) {
+	fmt.Println("process forum list")
 	var forumList ForumList
 	err := xml.Unmarshal(bytes, &forumList)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("error unmarshalling xml, aborting")
+		return
 	}
 	for _,forum := range forumList.Forums {
+		fmt.Println("get forum xml")
 		forumUrl := fmt.Sprintf(baseUrlApi2 + "/forum?id=%d", forum.Id)
 		getXml(forumUrl, processForum)
 	}
 }
 
 func processForum(bytes []byte) {
+	fmt.Println("process forum")
 	var forum Forum
 	err := xml.Unmarshal(bytes, &forum)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("error unmarshalling xml, aborting")
+		return
 	}
 	for _,thread := range forum.Threads.Threads {
+		fmt.Println("get thread xml")
 		threadUrl := fmt.Sprintf(baseUrlApi2 + "/thread?id=%d", thread.Id)
 		getXml(threadUrl, processThread)
 	}
 }
 
 func processThread(bytes []byte) {
+	fmt.Println("process thread")
 	var thread Thread
 	err := xml.Unmarshal(bytes, &thread)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("error unmarshalling xml, aborting")
+		return
 	}
 	for _,article := range thread.Articles.Articles {
+		fmt.Println("get user xml")
 		userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", article.Author)
 		getXml(userUrl, processUser)
 	}
 }
 
 func processUser(bytes []byte) {
+	fmt.Println("process user")
 	var user User
 	err := xml.Unmarshal(bytes, &user)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("error unmarshalling xml, aborting")
+		return
+	}
+	if len(user.Name) < 1 {
+		fmt.Println("skipping empty user")
+		return
 	}
 	if _, exists := exploredUsers[user.Id]; exists {
 		return
@@ -90,11 +110,10 @@ func processUser(bytes []byte) {
 
 	// explore user friends
 	for _,buddy := range user.Buddies.Buddies {
+		fmt.Println("get buddies xml")
 		buddyUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", buddy.Name)
 		getXml(buddyUrl, processUser)
 	}
-
-
 }
 
 func createCollectionProcessor(user User) XmlProcessor {
@@ -102,11 +121,10 @@ func createCollectionProcessor(user User) XmlProcessor {
 		var collectionItems CollectionItems
 		err := xml.Unmarshal(bytes, &collectionItems)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("error unmarshalling xml, aborting")
+			return
 		}
 		for _,item := range collectionItems.Items {
-			info := fmt.Sprintf("user %s has item %s in collection", user.Name, item.Name)
-			fmt.Println(info)
 			insertCollection(user, item)
 		}
 	}
@@ -115,24 +133,38 @@ func createCollectionProcessor(user User) XmlProcessor {
 type XmlProcessor func(bytes []byte)
 
 func getXml(url string, processor XmlProcessor) {
+	// throttle requests a little
+	time.Sleep(5 * time.Second)
 	response, err := http.Get(url)
 	if err != nil {
-		log.Fatal(err)
+		retryGetXml(err, "error getting response - waiting for retry", url, processor, 30)
+		return
 	} else {
 		defer response.Body.Close()
 		if response.StatusCode == 202 {
-			fmt.Println("received 202 - waiting for retry")
-			time.Sleep(5 * time.Second)
-			getXml(url, processor)
+			retryGetXml(err, "received 202 - waiting for retry", url, processor, 5)
+			return
+		} else if response.StatusCode != 200 {
+			retryGetXml(err, fmt.Sprintf("server error %d - waiting for retry", response.StatusCode), url, processor, 30)
 			return
 		}
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
-			log.Fatal(err)
+			retryGetXml(err, "error reading response - waiting for retry", url, processor, 30)
+			return
 		} else {
 			processor(body)
 		}
 	}
+}
+
+func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor, sleepSeconds int) {
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(retryMsg)
+	time.Sleep(time.Duration(sleepSeconds) * time.Second)
+	getXml(url, processor)
 }
 
 func openDb() {
@@ -155,43 +187,32 @@ func closeDb() {
 }
 
 func insertCollection(user User, collection CollectionItem) {
-	stmt, err := sqlDb.Prepare("INSERT INTO user_collections(userId, userName, gameName, yearPublished," +
-		"numPlays, subType, own, prevOwned, forTrade, want, wantToPlay, wantToBuy, " +
-		"wishList, wishListPriority, preOrdered, lastModified, minPlayers, maxPlayers, minPlaytime, maxPlaytime," +
-		"playingTime, numOwned, userRating, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
-		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+	_, err := collectionInsertStmt.Exec(collection.Id, user.Id, user.Name, collection.Name, collection.NumPlays,
+	collection.Status.Own, collection.Status.PrevOwned, collection.Status.ForTrade, collection.Status.Want,
+	collection.Status.WantToPlay, collection.Status.WantToBuy, collection.Status.WishList, collection.Status.WishListPriority,
+	collection.Status.PreOrdered, collection.Status.LastModified,
+	collection.Stats.Rating.Value)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	_, err = stmt.Exec(user.Id, user.Name, collection.Name, collection.YearPublished, collection.NumPlays, collection.SubType,
-	collection.Status.Own, collection.Status.PrevOwned, collection.Status.ForTrade, collection.Status.Want,
-	collection.Status.WantToPlay, collection.Status.WantToBuy, collection.Status.WishList, collection.Status.WishListPriority,
-	collection.Status.PreOrdered, collection.Status.LastModified, collection.Stats.MinPlayers, collection.Stats.MaxPlayers,
-	collection.Stats.MinPlaytime, collection.Stats.MaxPlaytime, collection.Stats.PlayingTime, collection.Stats.NumOwned,
-	collection.Stats.Rating.Value, collection.Stats.Rating.UsersRated.Value, collection.Stats.Rating.AverageRating.Value,
-	collection.Stats.Rating.BayesAverageRating.Value, collection.Stats.Rating.StdDevRating.Value, collection.Stats.Rating.MedianRating.Value)
-
-	fmt.Println("inserted collection")
+	// update metadata
+	_, err = gameMetaInsertStmt.Exec(collection.ObjectId, collection.Name, collection.YearPublished, collection.SubType,
+		collection.Stats.MinPlayers, collection.Stats.MaxPlayers,
+		collection.Stats.MinPlaytime, collection.Stats.MaxPlaytime, collection.Stats.PlayingTime, collection.Stats.NumOwned,
+		collection.Stats.Rating.UsersRated.Value, collection.Stats.Rating.AverageRating.Value,
+		collection.Stats.Rating.BayesAverageRating.Value, collection.Stats.Rating.StdDevRating.Value, collection.Stats.Rating.MedianRating.Value)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func setupDb() {
-	//_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS users(id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
-	//	"userId INT NOT NULL, userName VARCHAR(200) NOT NULL);")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
 	_, err := sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_collections(" +
-		"id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
+		"id INT NOT NULL PRIMARY KEY, " +
 		"userId INT NOT NULL, " +
 		"userName VARCHAR(200) NOT NULL, " +
 		"gameName VARCHAR(1000) NOT NULL, " +
-		"yearPublished INT, " +
 		"numPlays INT, " +
-		"subType VARCHAR(100), " +
 		"own BOOL, " +
 		"prevOwned BOOL, " +
 		"forTrade BOOL, " +
@@ -202,13 +223,21 @@ func setupDb() {
 		"wishListPriority INT, " +
 		"preOrdered BOOL, " +
 		"lastModified VARCHAR(100), " +
+		"userRating DOUBLE);")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS game_metadata(" +
+		"id INT NOT NULL PRIMARY KEY, " +
+		"gameName VARCHAR(1000) NOT NULL, " +
+		"yearPublished INT, " +
+		"subType VARCHAR(100), " +
 		"minPlayers INT, " +
 		"maxPlayers INT, " +
 		"minPlaytime INT, " +
 		"maxPlaytime INT, " +
 		"playingTime INT, " +
 		"numOwned INT, " +
-		"userRating DOUBLE, " +
 		"ratingCount INT, " +
 		"averageRating DOUBLE, " +
 		"bayesAverageRating DOUBLE, " +
@@ -217,26 +246,22 @@ func setupDb() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func insertUser(userId int, userName string) {
-	stmt, err := sqlDb.Prepare("INSERT INTO users(userId, userName) VALUES(?)")
+	collectionInsertStmt, err = sqlDb.Prepare("REPLACE INTO user_collections(id, userId, userName, gameName," +
+		"numPlays, own, prevOwned, forTrade, want, wantToPlay, wantToBuy, " +
+		"wishList, wishListPriority, preOrdered, lastModified, " +
+		"userRating) " +
+		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		log.Fatal(err)
 	}
-	res, err := stmt.Exec("Dolly")
+	gameMetaInsertStmt, err = sqlDb.Prepare("REPLACE INTO game_metadata(id, gameName, yearPublished," +
+		"subType, " +
+		"minPlayers, maxPlayers, minPlaytime, maxPlaytime," +
+		"playingTime, numOwned, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
+		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		log.Fatal(err)
 	}
-	lastId, err := res.LastInsertId()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rowCnt, err := res.RowsAffected()
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("ID = %d, affected = %d\n", lastId, rowCnt)
 }
 
 func fetch() {
