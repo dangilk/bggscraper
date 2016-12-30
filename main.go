@@ -9,27 +9,61 @@ import (
 	"encoding/xml"
 	"fmt"
 	"time"
+	//"github.com/muesli/regommend"
 )
 
 var sqlDb *sql.DB
-var baseUrlApi2 = "https://www.boardgamegeek.com/xmlapi2"
-var baseUrlApi1 = "https://www.boardgamegeek.com/xmlapi"
-var exploredUsers = make(map[int]bool)
+const baseUrlApi2 = "https://www.boardgamegeek.com/xmlapi2"
+const baseUrlApi1 = "https://www.boardgamegeek.com/xmlapi"
+var exploredUsers map[int]bool
 var collectionInsertStmt *sql.Stmt
 var gameMetaInsertStmt *sql.Stmt
+var currentForumListId int
 
 func main() {
 	openDb()
 	setupDb()
-	fetch()
-
-
-	for i := 1; i < 100; i++ {
-		getUsersFromForumList(i)
+	//fetch()
+	currentForumListId = getCurrentForumList()
+	for {
+		exploredUsers = make(map[int]bool)
+		getUsersFromForumList(currentForumListId)
+		currentForumListId++
+		updateCurrentForumList(currentForumListId)
 	}
 
-	fmt.Println("all done!")
-	closeDb()
+	//closeDb()
+}
+
+func updateCurrentForumList(forumId int) {
+	_, err := sqlDb.Exec("REPLACE INTO current_forumlist(id, forumId) VALUES(?,?)", 1, forumId)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func getCurrentForumList() int {
+	ret := 0;
+	var (
+		forumId int
+	)
+	rows, err := sqlDb.Query("select forumId from current_forumlist where id = 1")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err := rows.Scan(&forumId)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ret = forumId
+	}
+	err = rows.Err()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return ret
 }
 
 // get a forumlist, then get its forums, then get its threads, then get its articles, and finally get users from articles
@@ -40,7 +74,6 @@ func getUsersFromForumList(forumId int) {
 }
 
 func processForumList(bytes []byte) {
-	fmt.Println("process forum list")
 	var forumList ForumList
 	err := xml.Unmarshal(bytes, &forumList)
 	if err != nil {
@@ -48,29 +81,28 @@ func processForumList(bytes []byte) {
 		return
 	}
 	for _,forum := range forumList.Forums {
-		fmt.Println("get forum xml")
 		forumUrl := fmt.Sprintf(baseUrlApi2 + "/forum?id=%d", forum.Id)
 		getXml(forumUrl, processForum)
 	}
 }
 
 func processForum(bytes []byte) {
-	fmt.Println("process forum")
 	var forum Forum
 	err := xml.Unmarshal(bytes, &forum)
 	if err != nil {
 		fmt.Println("error unmarshalling xml, aborting")
-		return
+	}
+	if forum.Id < 1 {
+		// reset forum list
+		currentForumListId = 0
 	}
 	for _,thread := range forum.Threads.Threads {
-		fmt.Println("get thread xml")
 		threadUrl := fmt.Sprintf(baseUrlApi2 + "/thread?id=%d", thread.Id)
 		getXml(threadUrl, processThread)
 	}
 }
 
 func processThread(bytes []byte) {
-	fmt.Println("process thread")
 	var thread Thread
 	err := xml.Unmarshal(bytes, &thread)
 	if err != nil {
@@ -78,7 +110,6 @@ func processThread(bytes []byte) {
 		return
 	}
 	for _,article := range thread.Articles.Articles {
-		fmt.Println("get user xml")
 		userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", article.Author)
 		getXml(userUrl, processUser)
 	}
@@ -141,19 +172,20 @@ func getXml(url string, processor XmlProcessor) {
 		return
 	} else {
 		defer response.Body.Close()
-		if response.StatusCode == 202 {
+		statusCode := response.StatusCode
+		if statusCode == 200 {
+			body, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				retryGetXml(err, "error reading response - waiting for retry", url, processor, 30)
+			} else {
+				processor(body)
+			}
+		} else if statusCode == 202 {
 			retryGetXml(err, "received 202 - waiting for retry", url, processor, 5)
-			return
-		} else if response.StatusCode != 200 {
-			retryGetXml(err, fmt.Sprintf("server error %d - waiting for retry", response.StatusCode), url, processor, 30)
-			return
-		}
-		body, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			retryGetXml(err, "error reading response - waiting for retry", url, processor, 30)
-			return
+		} else if statusCode == 400 {
+			fmt.Println("received error 400 - aborting")
 		} else {
-			processor(body)
+			retryGetXml(err, fmt.Sprintf("server error %d - waiting for retry", statusCode), url, processor, 30)
 		}
 	}
 }
@@ -227,6 +259,10 @@ func setupDb() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS current_forumlist(id INT NOT NULL PRIMARY KEY, forumId INT NOT NULL);")
+	if err != nil {
+		log.Fatal(err)
+	}
 	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS game_metadata(" +
 		"id INT NOT NULL PRIMARY KEY, " +
 		"gameName VARCHAR(1000) NOT NULL, " +
@@ -291,3 +327,31 @@ func fetch() {
 		log.Fatal(err)
 	}
 }
+
+type GameRating struct {
+	Rating int
+}
+
+//func recommend() {
+//	// Accessing a new regommend table for the first time will create it.
+//	games := regommend.Table("games")
+//
+//	games1 := make(map[interface{}]GameRating)
+//	games1["1984"] = GameRating(1)
+//	games1["Robinson Crusoe"] = GameRating(2)
+//	games1["Moby-Dick"] = GameRating(3)
+//	games.Add("Chris", games1)
+//
+//	booksJayRead := make(map[interface{}]float64)
+//	booksJayRead["1984"] = 5.0
+//	booksJayRead["Robinson Crusoe"] = 4.0
+//	booksJayRead["Gulliver's Travels"] = 4.5
+//	books.Add("Jay", booksJayRead)
+//
+//	recs, _ := books.Recommend("Chris")
+//	for _, rec := range recs {
+//		fmt.Println("Recommending", rec.Key, "with score", rec.Distance)
+//	}
+//
+//	neighbors, _ := books.Neighbors("Chris")
+//}
