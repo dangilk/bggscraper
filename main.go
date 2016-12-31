@@ -198,10 +198,14 @@ func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor,
 	time.Sleep(time.Duration(sleepSeconds) * time.Second)
 	getXml(url, processor)
 }
-
 func openDb() {
+	file, err := ioutil.ReadFile("~/work/mysqlpw.txt")
+	userPw := "root"
+	if err == nil {
+		userPw += ":" + string(file)
+	}
 	db, err := sql.Open("mysql",
-		"root@tcp(127.0.0.1:3306)/hello")
+		userPw + "@tcp(127.0.0.1:3306)/hello")
 	if err != nil {
 		log.Fatal(err)
 	}
