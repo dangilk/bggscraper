@@ -199,7 +199,7 @@ func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor,
 	getXml(url, processor)
 }
 func openDb() {
-	file, err := ioutil.ReadFile("~/work/mysqlpw.txt")
+	file, err := ioutil.ReadFile("/root/work/mysqlpw.txt")
 	userPw := "root"
 	if err == nil {
 		userPw += ":" + string(file)
