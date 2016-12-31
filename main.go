@@ -205,7 +205,7 @@ func openDb() {
 		userPw += ":" + string(file)
 	}
 	db, err := sql.Open("mysql",
-		userPw + "@tcp(127.0.0.1:3306)/hello")
+		userPw + "@/hello")
 	if err != nil {
 		log.Fatal(err)
 	}
