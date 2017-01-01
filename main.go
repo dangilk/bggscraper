@@ -245,7 +245,8 @@ func insertCollection(user User, collection CollectionItem) {
 	collection.Status.PreOrdered, collection.Status.LastModified,
 	collection.Stats.Rating.Value)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 	// update metadata
 	_, err = gameMetaInsertStmt.Exec(collection.ObjectId, collection.Name, collection.YearPublished, collection.SubType,
@@ -254,7 +255,8 @@ func insertCollection(user User, collection CollectionItem) {
 		collection.Stats.Rating.UsersRated.Value, collection.Stats.Rating.AverageRating.Value,
 		collection.Stats.Rating.BayesAverageRating.Value, collection.Stats.Rating.StdDevRating.Value, collection.Stats.Rating.MedianRating.Value)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 }
 
