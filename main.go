@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"time"
 	//"github.com/muesli/regommend"
+	"os"
+	"bufio"
 )
 
 var sqlDb *sql.DB
@@ -199,13 +201,27 @@ func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor,
 	getXml(url, processor)
 }
 func openDb() {
-	file, err := ioutil.ReadFile("/root/work/mysqlpw.txt")
 	userPw := "root"
+	file, err := os.Open("/root/work/mysqlpw.txt")
 	if err == nil {
-		userPw += ":" + string(file)
+		// Create a new Scanner for the file.
+		scanner := bufio.NewScanner(file)
+		// Loop over all lines in the file and print them.
+		for scanner.Scan() {
+			line := scanner.Text()
+			userPw += ":" + line
+		}
 	}
-	db, err := sql.Open("mysql",
-		userPw + "@/hello")
+	open := userPw + "@tcp(127.0.0.1:3306)/hello"
+	println(open)
+
+
+	//file, err := ioutil.ReadFile("/root/work/mysqlpw.txt")
+	//userPw := "root"
+	//if err == nil {
+	//	userPw += ":" + string(file)
+	//}
+	db, err := sql.Open("mysql", open)
 	if err != nil {
 		log.Fatal(err)
 	}
