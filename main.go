@@ -12,6 +12,7 @@ import (
 	//"github.com/muesli/regommend"
 	"os"
 	"bufio"
+	"strconv"
 )
 
 var sqlDb *sql.DB
@@ -26,6 +27,42 @@ func main() {
 	openDb()
 	setupDb()
 	//fetch()
+
+	arg := os.Args[1]
+	if arg == "scraper" {
+		log.Println("starting scraper")
+		startScraperService()
+	} else if arg == "service" {
+		log.Println("starting query service")
+		startQueryService()
+	} else {
+		log.Println("no commands found, shutting down")
+	}
+
+
+	//closeDb()
+}
+
+// SERVICE SECTION
+func topSuggestions(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()  // parse arguments, you have to call this by yourself
+	userId := r.FormValue("userId")
+	count, _ := strconv.Atoi(r.FormValue("count"))
+	fetchTopSuggestions(userId, count)
+	fmt.Fprintf(w, "Hello astaxie!") // send data to client side
+}
+
+func startQueryService() {
+	http.HandleFunc("/topSuggestions", topSuggestions) // set router
+	err := http.ListenAndServe(":9090", nil) // set listen port
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
+}
+
+// SCRAPER SECTION
+
+func startScraperService() {
 	currentForumListId = getCurrentForumList()
 	for {
 		exploredUsers = make(map[int]bool)
@@ -33,8 +70,6 @@ func main() {
 		currentForumListId++
 		updateCurrentForumList(currentForumListId)
 	}
-
-	//closeDb()
 }
 
 func updateCurrentForumList(forumId int) {
@@ -322,27 +357,28 @@ func setupDb() {
 	}
 }
 
-func fetch() {
+func fetchTopSuggestions(userId string, limit int) {
+	log.Println("fetch top suggestions for " + userId)
 	var (
-		id int
-		name string
+		gameName string
+		userRating float64
 	)
-	stmt, err := sqlDb.Prepare("select id, name from users where id = ?")
+	stmt, err := sqlDb.Prepare("select gameName, userRating from user_collections where userId = ? order by userRating desc limit ?")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer stmt.Close()
-	rows, err := stmt.Query(1)
+	rows, err := stmt.Query(userId, limit)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		err := rows.Scan(&id, &name)
+		err := rows.Scan(&gameName, &userRating)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(id, name)
+		log.Println(gameName, userRating)
 	}
 	err = rows.Err()
 	if err != nil {
