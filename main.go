@@ -31,10 +31,10 @@ func main() {
 	//fetch()
 
 	arg := os.Args[1]
-	if arg == "scraper" {
+	if arg == "bggScraper" {
 		log.Println("starting scraper")
 		startScraperService()
-	} else if arg == "service" {
+	} else if arg == "bggService" {
 		log.Println("starting query service")
 		startQueryService()
 	} else {
