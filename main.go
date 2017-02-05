@@ -13,6 +13,8 @@ import (
 	"os"
 	"bufio"
 	"strconv"
+	"github.com/muesli/regommend"
+	"encoding/json"
 )
 
 var sqlDb *sql.DB
@@ -48,6 +50,7 @@ func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()  // parse arguments, you have to call this by yourself
 	userId := r.FormValue("userId")
 	count, _ := strconv.Atoi(r.FormValue("count"))
+	recommend()
 	fetchTopSuggestions(userId, count)
 	fmt.Fprintf(w, "Hello dan!") // send data to client side
 }
@@ -192,9 +195,12 @@ func createCollectionProcessor(user User) XmlProcessor {
 			logToFile(false, "error unmarshalling collection xml, aborting")
 			return
 		}
+		userRatings := make(map[string]int)
 		for _,item := range collectionItems.Items {
 			insertCollection(user, item)
+			userRatings[strconv.Itoa(item.ObjectId)] = item.Stats.Rating.Value
 		}
+		insertUserRatings(strconv.Itoa(user.Id), userRatings)
 	}
 }
 
@@ -319,6 +325,11 @@ func setupDb() {
 	if err != nil {
 		logToFile(true, err)
 	}
+
+	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_ratings(userId INT NOT NULL PRIMARY KEY, ratingsJson TEXT);")
+	if err != nil {
+		logToFile(true, err)
+	}
 	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS game_metadata(" +
 		"id INT NOT NULL PRIMARY KEY, " +
 		"gameName VARCHAR(1000) NOT NULL, " +
@@ -352,6 +363,56 @@ func setupDb() {
 		"playingTime, numOwned, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
 		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
+		logToFile(true, err)
+	}
+}
+
+func insertUserRatings(userId string, ratings map[string]int) {
+	json, err := json.Marshal(ratings)
+	if err != nil {
+		logToFile(false, err)
+		return
+	}
+	log.Println(string(json))
+	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userId, ratingsJson) VALUES(?,?)", userId, string(json))
+	if err != nil {
+		logToFile(true, err)
+	}
+}
+
+func fetchUserRatings(userId string) {
+	var (
+		userRatings string
+	)
+	type RatingsJson struct {
+		userRatings   []string      `json:"userRatings"`
+	}
+	stmt, err := sqlDb.Prepare("select ratingsJson from user_ratings where userId = ? limit 1")
+	if err != nil {
+		logToFile(true, err)
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(userId)
+	if err != nil {
+		logToFile(true, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err := rows.Scan(&userRatings)
+		if err != nil {
+			logToFile(true, err)
+		}
+		if len(userRatings) <= 0 {
+			userRatings = `{"userRatings": []}`
+		}
+		//str := `{"page": 1, "fruits": ["apple", "peach"]}`
+		res := RatingsJson{}
+		json.Unmarshal([]byte(userRatings), &res)
+		log.Println(userRatings)
+	}
+	err = rows.Err()
+	if err != nil {
+		//log.Fatal(err)
 		logToFile(true, err)
 	}
 }
@@ -393,29 +454,29 @@ type GameRating struct {
 	Rating int
 }
 
-//func recommend() {
-//	// Accessing a new regommend table for the first time will create it.
-//	games := regommend.Table("games")
-//
-//	games1 := make(map[interface{}]GameRating)
-//	games1["1984"] = GameRating(1)
-//	games1["Robinson Crusoe"] = GameRating(2)
-//	games1["Moby-Dick"] = GameRating(3)
-//	games.Add("Chris", games1)
-//
-//	booksJayRead := make(map[interface{}]float64)
-//	booksJayRead["1984"] = 5.0
-//	booksJayRead["Robinson Crusoe"] = 4.0
-//	booksJayRead["Gulliver's Travels"] = 4.5
-//	books.Add("Jay", booksJayRead)
-//
-//	recs, _ := books.Recommend("Chris")
-//	for _, rec := range recs {
-//		fmt.Println("Recommending", rec.Key, "with score", rec.Distance)
-//	}
-//
-//	neighbors, _ := books.Neighbors("Chris")
-//}
+func recommend() {
+	// Accessing a new regommend table for the first time will create it.
+	games := regommend.Table("games")
+
+	games1 := make(map[interface{}]float64)
+	games1["1984"] = 1
+	games1["Robinson Crusoe"] = 2
+	games1["Moby-Dick"] = 3
+	games.Add("Chris", games1)
+	//
+	//booksJayRead := make(map[interface{}]float64)
+	//booksJayRead["1984"] = 5.0
+	//booksJayRead["Robinson Crusoe"] = 4.0
+	//booksJayRead["Gulliver's Travels"] = 4.5
+	//books.Add("Jay", booksJayRead)
+
+	recs, _ := games.Recommend("Chris")
+	for _, rec := range recs {
+		fmt.Println("Recommending", rec.Key, "with score", rec.Distance)
+	}
+
+	//neighbors, _ := books.Neighbors("Chris")
+}
 
 func logToFile(isFatal bool, s ...interface{}) {
 	log.SetOutput(os.Stdout)
@@ -437,4 +498,5 @@ func logToFile(isFatal bool, s ...interface{}) {
 	} else {
 		log.Println(s)
 	}
+	log.SetOutput(os.Stdout)
 }
