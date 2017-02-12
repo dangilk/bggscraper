@@ -503,7 +503,6 @@ func recommend(userId string) []GameRecommendation {
 		}
 	}
 	recList = getGameMetadataForIds(recList)
-
 	vals := make([]GameRecommendation, 0)
 	for _, val := range recList {
 		vals = append(vals, val)
