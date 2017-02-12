@@ -49,6 +49,7 @@ func main() {
 func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()  // parse arguments, you have to call this by yourself
 	userId := r.FormValue("userId")
+	fmt.Fprint(w, "what would I recommend for user ", userId, "...\n")
 	for _, rec := range recommend(userId) {
 		fmt.Fprint(w, "I would recommend: ", rec.Name, "\n")
 	}
