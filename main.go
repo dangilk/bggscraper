@@ -9,12 +9,13 @@ import (
 	"encoding/xml"
 	"fmt"
 	"time"
-	//"github.com/muesli/regommend"
 	"os"
 	"bufio"
 	"strconv"
 	"github.com/muesli/regommend"
 	"encoding/json"
+	"math"
+	"strings"
 )
 
 var sqlDb *sql.DB
@@ -28,7 +29,6 @@ var currentForumListId int
 func main() {
 	openDb()
 	setupDb()
-	//fetch()
 
 	arg := os.Args[1]
 	if arg == "bggScraper" {
@@ -49,10 +49,9 @@ func main() {
 func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()  // parse arguments, you have to call this by yourself
 	userId := r.FormValue("userId")
-	count, _ := strconv.Atoi(r.FormValue("count"))
-	recommend()
-	fetchTopSuggestions(userId, count)
-	fmt.Fprintf(w, "Hello dan!") // send data to client side
+	for _, rec := range recommend(userId) {
+		fmt.Fprint(w, "I would recommend: ", rec.Name, "\n")
+	}
 }
 
 func startQueryService() {
@@ -255,17 +254,10 @@ func openDb() {
 	open := userPw + "@tcp(127.0.0.1:3306)/hello"
 	println(open)
 
-
-	//file, err := ioutil.ReadFile("/root/work/mysqlpw.txt")
-	//userPw := "root"
-	//if err == nil {
-	//	userPw += ":" + string(file)
-	//}
 	db, err := sql.Open("mysql", open)
 	if err != nil {
 		logToFile(true, err)
 	}
-	//defer db.Close()
 
 	err = db.Ping()
 	if err != nil {
@@ -326,7 +318,7 @@ func setupDb() {
 		logToFile(true, err)
 	}
 
-	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_ratings(userId INT NOT NULL PRIMARY KEY, ratingsJson TEXT);")
+	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_ratings(userId INT NOT NULL PRIMARY KEY, ratingsJson LONGTEXT);")
 	if err != nil {
 		logToFile(true, err)
 	}
@@ -368,52 +360,80 @@ func setupDb() {
 }
 
 func insertUserRatings(userId string, ratings map[string]int) {
+	log.Println(ratings)
 	json, err := json.Marshal(ratings)
 	if err != nil {
 		logToFile(false, err)
 		return
 	}
+	log.Println(json)
 	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userId, ratingsJson) VALUES(?,?)", userId, string(json))
 	if err != nil {
-		logToFile(true, err)
+		logToFile(false, err)
 	}
 }
 
-func fetchUserRatings(userId string) {
-	var (
-		userRatings string
-	)
-	type RatingsJson struct {
-		userRatings   []string      `json:"userRatings"`
-	}
-	stmt, err := sqlDb.Prepare("select ratingsJson from user_ratings where userId = ? limit 1")
+type UserRatingsBundle struct {
+	userId string
+	ratings map[string]int
+}
+
+func fetchUserRatings(userId string) UserRatingsBundle {
+	stmt, err := sqlDb.Prepare("select userId, ratingsJson from user_ratings where userId = ? limit 1")
 	if err != nil {
 		logToFile(true, err)
 	}
 	defer stmt.Close()
-	rows, err := stmt.Query(userId)
+	rows, err := stmt.Query()
 	if err != nil {
 		logToFile(true, err)
 	}
 	defer rows.Close()
+	ratings := parseUserRatingsQuery(rows)
+	if len(ratings) == 1 {
+		return ratings[0]
+	} else {
+		return UserRatingsBundle{}
+	}
+}
+
+func fetchUserRatingsSample() []UserRatingsBundle {
+	stmt, err := sqlDb.Prepare("select userId, ratingsJson from user_ratings limit 1000")
+	if err != nil {
+		logToFile(true, err)
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query()
+	if err != nil {
+		logToFile(true, err)
+	}
+	defer rows.Close()
+	return parseUserRatingsQuery(rows)
+}
+
+func parseUserRatingsQuery(rows *sql.Rows) []UserRatingsBundle {
+	var (
+		userId string
+		userRatings string
+	)
+	resultSet := make([]UserRatingsBundle, 0)
 	for rows.Next() {
-		err := rows.Scan(&userRatings)
+		err := rows.Scan(&userId, &userRatings)
 		if err != nil {
 			logToFile(true, err)
 		}
 		if len(userRatings) <= 0 {
-			userRatings = `{"userRatings": []}`
+			userRatings = `{}`
 		}
-		//str := `{"page": 1, "fruits": ["apple", "peach"]}`
-		res := RatingsJson{}
+		res := map[string]int{}
 		json.Unmarshal([]byte(userRatings), &res)
-		log.Println(userRatings)
+		resultSet = append(resultSet, UserRatingsBundle{userId, res})
 	}
-	err = rows.Err()
+	err := rows.Err()
 	if err != nil {
-		//log.Fatal(err)
 		logToFile(true, err)
 	}
+	return resultSet
 }
 
 func fetchTopSuggestions(userId string, limit int) {
@@ -449,32 +469,83 @@ func fetchTopSuggestions(userId string, limit int) {
 	}
 }
 
-type GameRating struct {
+type GameRecommendation struct {
+	Id int
+	Name string
 	Rating int
 }
 
-func recommend() {
+func recommend(userId string) []GameRecommendation {
 	// Accessing a new regommend table for the first time will create it.
 	games := regommend.Table("games")
 
-	games1 := make(map[interface{}]float64)
-	games1["1984"] = 1
-	games1["Robinson Crusoe"] = 2
-	games1["Moby-Dick"] = 3
-	games.Add("Chris", games1)
-	//
-	//booksJayRead := make(map[interface{}]float64)
-	//booksJayRead["1984"] = 5.0
-	//booksJayRead["Robinson Crusoe"] = 4.0
-	//booksJayRead["Gulliver's Travels"] = 4.5
-	//books.Add("Jay", booksJayRead)
-
-	recs, _ := games.Recommend("Chris")
-	for _, rec := range recs {
-		fmt.Println("Recommending", rec.Key, "with score", rec.Distance)
+	sampleRatings := fetchUserRatingsSample()
+	for _, bundle := range sampleRatings {
+		ratings := make(map[interface{}]float64)
+		for gameId, gameRating := range bundle.ratings {
+			if gameRating != 0 {
+				ratings[gameId] = float64(gameRating)
+			}
+		}
+		games.Add(bundle.userId, ratings)
 	}
 
-	//neighbors, _ := books.Neighbors("Chris")
+	recs, _ := games.Recommend(userId)
+	recSize := int(math.Min(5,float64(len(recs))))
+	recList := make(map[int]GameRecommendation)
+
+	for i := 0; i < recSize ; i++ {
+		if str, ok := recs[i].Key.(string); ok {
+			id, _ := strconv.Atoi(str)
+			recList[id] = GameRecommendation{Id: id, Rating: int(recs[i].Distance)}
+		} else {
+			/* not string */
+		}
+	}
+	recList = getGameMetadataForIds(recList)
+
+	vals := make([]GameRecommendation, 0)
+	for _, val := range recList {
+		vals = append(vals, val)
+	}
+	return vals
+}
+
+func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecommendation {
+	var (
+		id int
+		gameName string
+	)
+	keys := make([]interface{}, 0, len(recMap))
+	for k := range recMap {
+		keys = append(keys, k)
+	}
+	if (len(keys) < 1) {
+		return recMap
+	}
+	stmt, err := sqlDb.Prepare("select id, gameName from game_metadata where id IN(?" + strings.Repeat(",?", len(keys)-1) + ")")
+	if err != nil {
+		logToFile(true, err)
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(keys...)
+	if err != nil {
+		logToFile(true, err)
+	}
+	defer rows.Close()
+	ret := make(map[int]GameRecommendation)
+	for rows.Next() {
+		err := rows.Scan(&id, &gameName)
+		if err != nil {
+			logToFile(true, err)
+		}
+		ret[id] = GameRecommendation{id, gameName, recMap[id].Rating}
+	}
+	err = rows.Err()
+	if err != nil {
+		logToFile(true, err)
+	}
+	return ret
 }
 
 func logToFile(isFatal bool, s ...interface{}) {
