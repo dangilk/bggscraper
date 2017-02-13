@@ -66,7 +66,7 @@ func startQueryService() {
 // SCRAPER SECTION
 
 func startScraperService() {
-	currentForumListId = 33000000000//getCurrentForumList()
+	currentForumListId = getCurrentForumList()
 	for {
 		logToFile(false, "start scraper iteration for forumList: " + strconv.Itoa(currentForumListId))
 		exploredUsers = make(map[int]bool)
