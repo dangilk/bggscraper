@@ -66,7 +66,7 @@ func startQueryService() {
 // SCRAPER SECTION
 
 func startScraperService() {
-	currentForumListId = getCurrentForumList()
+	currentForumListId = 33000000000//getCurrentForumList()
 	for {
 		logToFile(false, "start scraper iteration for forumList: " + strconv.Itoa(currentForumListId))
 		exploredUsers = make(map[int]bool)
@@ -132,6 +132,7 @@ func processForum(bytes []byte) {
 	err := xml.Unmarshal(bytes, &forum)
 	if err != nil {
 		logToFile(false, "error unmarshalling forum xml, aborting")
+		return
 	}
 	if forum.Id < 1 {
 		// reset forum list
