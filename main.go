@@ -68,7 +68,7 @@ func startQueryService() {
 func startScraperService() {
 	currentForumListId = getCurrentForumList()
 	for {
-		logToFile(false, "start scraper iteration for forumList: " + strconv.Itoa(currentForumListId))
+		logToFile("start scraper iteration for forumList: " + strconv.Itoa(currentForumListId))
 		exploredUsers = make(map[int]bool)
 		getUsersFromForumList(currentForumListId)
 		currentForumListId++
@@ -79,7 +79,7 @@ func startScraperService() {
 func updateCurrentForumList(forumId int) {
 	_, err := sqlDb.Exec("REPLACE INTO current_forumlist(id, forumId) VALUES(?,?)", 1, forumId)
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
 	}
 }
 
@@ -90,26 +90,29 @@ func getCurrentForumList() int {
 	)
 	rows, err := sqlDb.Query("select forumId from current_forumlist where id = 1")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		return getCurrentForumList()
 	}
 	defer rows.Close()
 	for rows.Next() {
 		err := rows.Scan(&forumId)
 		if err != nil {
-			logToFile(true, err)
+			logToFile(err)
+			return getCurrentForumList()
 		}
 		ret = forumId
 	}
 	err = rows.Err()
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		return getCurrentForumList()
 	}
 	return ret
 }
 
 // get a forumlist, then get its forums, then get its threads, then get its articles, and finally get users from articles
 func getUsersFromForumList(forumId int) {
-	logToFile(false, "processing forumlist with id: " + strconv.Itoa(forumId))
+	logToFile("processing forumlist with id: " + strconv.Itoa(forumId))
 	forumListUrl := fmt.Sprintf(baseUrlApi2 + "/forumlist?id=%d&type=thing", forumId)
 	getXml(forumListUrl, processForumList)
 }
@@ -118,7 +121,7 @@ func processForumList(bytes []byte) {
 	var forumList ForumList
 	err := xml.Unmarshal(bytes, &forumList)
 	if err != nil {
-		logToFile(false, "error unmarshalling forumlist xml, aborting")
+		logToFile("error unmarshalling forumlist xml, aborting")
 		return
 	}
 	for _,forum := range forumList.Forums {
@@ -131,7 +134,7 @@ func processForum(bytes []byte) {
 	var forum Forum
 	err := xml.Unmarshal(bytes, &forum)
 	if err != nil {
-		logToFile(false, "error unmarshalling forum xml, aborting")
+		logToFile("error unmarshalling forum xml, aborting")
 		return
 	}
 	if forum.Id < 1 {
@@ -148,7 +151,7 @@ func processThread(bytes []byte) {
 	var thread Thread
 	err := xml.Unmarshal(bytes, &thread)
 	if err != nil {
-		logToFile(false, "error unmarshalling thread xml, aborting")
+		logToFile("error unmarshalling thread xml, aborting")
 		return
 	}
 	for _,article := range thread.Articles.Articles {
@@ -161,11 +164,11 @@ func processUser(bytes []byte) {
 	var user User
 	err := xml.Unmarshal(bytes, &user)
 	if err != nil {
-		logToFile(false, "error unmarshalling user xml, aborting")
+		logToFile("error unmarshalling user xml, aborting")
 		return
 	}
 	if len(user.Name) < 1 {
-		logToFile(false, "skipping empty user")
+		logToFile("skipping empty user")
 		return
 	}
 	if _, exists := exploredUsers[user.Id]; exists {
@@ -175,14 +178,14 @@ func processUser(bytes []byte) {
 	}
 
 	// get the users collection
-	logToFile(false, "process user: " + user.Name)
+	logToFile("process user: " + user.Name)
 	collectionUrl := fmt.Sprintf(baseUrlApi1 + "/collection/%s", user.Name)
 	getXml(collectionUrl, createCollectionProcessor(user))
 
 
 	// explore user friends
 	for _,buddy := range user.Buddies.Buddies {
-		logToFile(false, "get buddies xml")
+		logToFile("get buddies xml")
 		buddyUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", buddy.Name)
 		getXml(buddyUrl, processUser)
 	}
@@ -193,7 +196,7 @@ func createCollectionProcessor(user User) XmlProcessor {
 		var collectionItems CollectionItems
 		err := xml.Unmarshal(bytes, &collectionItems)
 		if err != nil {
-			logToFile(false, "error unmarshalling collection xml, aborting")
+			logToFile("error unmarshalling collection xml, aborting")
 			return
 		}
 		userRatings := make(map[string]int)
@@ -227,7 +230,7 @@ func getXml(url string, processor XmlProcessor) {
 		} else if statusCode == 202 {
 			retryGetXml(err, "received 202 - waiting for retry", url, processor, 5)
 		} else if statusCode == 400 {
-			logToFile(false, "received error 400 - aborting")
+			logToFile("received error 400 - aborting")
 		} else {
 			retryGetXml(err, fmt.Sprintf("server error %d - waiting for retry", statusCode), url, processor, 30)
 		}
@@ -236,7 +239,7 @@ func getXml(url string, processor XmlProcessor) {
 
 func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor, sleepSeconds int) {
 	if err != nil {
-		logToFile(false, err, retryMsg)
+		logToFile(err, retryMsg)
 	}
 	time.Sleep(time.Duration(sleepSeconds) * time.Second)
 	getXml(url, processor)
@@ -258,7 +261,8 @@ func openDb() {
 
 	db, err := sql.Open("mysql", open)
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not open db")
 	}
 
 	err = db.Ping()
@@ -279,7 +283,7 @@ func insertCollection(user User, collection CollectionItem) {
 	collection.Status.PreOrdered, collection.Status.LastModified,
 	collection.Stats.Rating.Value)
 	if err != nil {
-		logToFile(false, err)
+		logToFile(err)
 		return
 	}
 	// update metadata
@@ -289,7 +293,7 @@ func insertCollection(user User, collection CollectionItem) {
 		collection.Stats.Rating.UsersRated.Value, collection.Stats.Rating.AverageRating.Value,
 		collection.Stats.Rating.BayesAverageRating.Value, collection.Stats.Rating.StdDevRating.Value, collection.Stats.Rating.MedianRating.Value)
 	if err != nil {
-		logToFile(false, err)
+		logToFile(err)
 		return
 	}
 }
@@ -313,16 +317,19 @@ func setupDb() {
 		"lastModified VARCHAR(100), " +
 		"userRating DOUBLE);")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not create db")
 	}
 	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS current_forumlist(id INT NOT NULL PRIMARY KEY, forumId INT NOT NULL);")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not create db")
 	}
 
 	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_ratings(userId INT NOT NULL PRIMARY KEY, ratingsJson LONGTEXT);")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not create db")
 	}
 	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS game_metadata(" +
 		"id INT NOT NULL PRIMARY KEY, " +
@@ -341,7 +348,8 @@ func setupDb() {
 		"stdDevRating DOUBLE, " +
 		"medianRating DOUBLE);")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not create db")
 	}
 	collectionInsertStmt, err = sqlDb.Prepare("REPLACE INTO user_collections(id, userId, userName, gameName," +
 		"numPlays, own, prevOwned, forTrade, want, wantToPlay, wantToBuy, " +
@@ -349,7 +357,8 @@ func setupDb() {
 		"userRating) " +
 		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not create db")
 	}
 	gameMetaInsertStmt, err = sqlDb.Prepare("REPLACE INTO game_metadata(id, gameName, yearPublished," +
 		"subType, " +
@@ -357,7 +366,8 @@ func setupDb() {
 		"playingTime, numOwned, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
 		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		panic("could not create db")
 	}
 }
 
@@ -365,13 +375,13 @@ func insertUserRatings(userId string, ratings map[string]int) {
 	log.Println(ratings)
 	json, err := json.Marshal(ratings)
 	if err != nil {
-		logToFile(false, err)
+		logToFile(err)
 		return
 	}
 	log.Println(json)
 	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userId, ratingsJson) VALUES(?,?)", userId, string(json))
 	if err != nil {
-		logToFile(false, err)
+		logToFile(err)
 	}
 }
 
@@ -380,50 +390,35 @@ type UserRatingsBundle struct {
 	ratings map[string]int
 }
 
-func fetchUserRatings(userId string) UserRatingsBundle {
-	stmt, err := sqlDb.Prepare("select userId, ratingsJson from user_ratings where userId = ? limit 1")
-	if err != nil {
-		logToFile(true, err)
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query()
-	if err != nil {
-		logToFile(true, err)
-	}
-	defer rows.Close()
-	ratings := parseUserRatingsQuery(rows)
-	if len(ratings) == 1 {
-		return ratings[0]
-	} else {
-		return UserRatingsBundle{}
-	}
-}
-
 func fetchUserRatingsSample() []UserRatingsBundle {
+	resultSet := make([]UserRatingsBundle, 0)
 	stmt, err := sqlDb.Prepare("select userId, ratingsJson from user_ratings limit 1000")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		return resultSet
 	}
 	defer stmt.Close()
 	rows, err := stmt.Query()
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		return resultSet
 	}
 	defer rows.Close()
-	return parseUserRatingsQuery(rows)
+	return parseUserRatingsQuery(rows, resultSet)
 }
 
-func parseUserRatingsQuery(rows *sql.Rows) []UserRatingsBundle {
+func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []UserRatingsBundle {
 	var (
 		userId string
 		userRatings string
 	)
-	resultSet := make([]UserRatingsBundle, 0)
 	for rows.Next() {
 		err := rows.Scan(&userId, &userRatings)
 		if err != nil {
-			logToFile(true, err)
+			logToFile(err)
+			return resultSet
 		}
+		defer rows.Close()
 		if len(userRatings) <= 0 {
 			userRatings = `{}`
 		}
@@ -433,42 +428,10 @@ func parseUserRatingsQuery(rows *sql.Rows) []UserRatingsBundle {
 	}
 	err := rows.Err()
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		return resultSet
 	}
 	return resultSet
-}
-
-func fetchTopSuggestions(userId string, limit int) {
-	log.Println("fetch top suggestions for " + userId)
-	var (
-		gameName string
-		userRating float64
-	)
-	stmt, err := sqlDb.Prepare("select gameName, userRating from user_collections where userId = ? order by userRating desc limit ?")
-	if err != nil {
-		//log.Fatal(err)
-		logToFile(true, err)
-	}
-	defer stmt.Close()
-	rows, err := stmt.Query(userId, limit)
-	if err != nil {
-		//log.Fatal(err)
-		logToFile(true, err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		err := rows.Scan(&gameName, &userRating)
-		if err != nil {
-			//log.Fatal(err)
-			logToFile(true, err)
-		}
-		log.Println(gameName, userRating)
-	}
-	err = rows.Err()
-	if err != nil {
-		//log.Fatal(err)
-		logToFile(true, err)
-	}
 }
 
 type GameRecommendation struct {
@@ -517,6 +480,7 @@ func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecomm
 		id int
 		gameName string
 	)
+	ret := make(map[int]GameRecommendation)
 	keys := make([]interface{}, 0, len(recMap))
 	for k := range recMap {
 		keys = append(keys, k)
@@ -526,30 +490,36 @@ func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecomm
 	}
 	stmt, err := sqlDb.Prepare("select id, gameName from game_metadata where id IN(?" + strings.Repeat(",?", len(keys)-1) + ")")
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		stmt.Close()
+		return ret
 	}
 	defer stmt.Close()
 	rows, err := stmt.Query(keys...)
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		rows.Close()
+		return ret
 	}
 	defer rows.Close()
-	ret := make(map[int]GameRecommendation)
+
 	for rows.Next() {
 		err := rows.Scan(&id, &gameName)
 		if err != nil {
-			logToFile(true, err)
+			logToFile(err)
+			continue
 		}
 		ret[id] = GameRecommendation{id, gameName, recMap[id].Rating}
 	}
 	err = rows.Err()
 	if err != nil {
-		logToFile(true, err)
+		logToFile(err)
+		return ret
 	}
 	return ret
 }
 
-func logToFile(isFatal bool, s ...interface{}) {
+func logToFile(s ...interface{}) {
 	log.SetOutput(os.Stdout)
 	log.Println(s)
 	currentDate := time.Now().UTC()
@@ -564,10 +534,6 @@ func logToFile(isFatal bool, s ...interface{}) {
 	}
 	defer f.Close()
 	log.SetOutput(f)
-	if isFatal {
-		log.Fatal("FATAL: ", s)
-	} else {
-		log.Println(s)
-	}
+	log.Println(s)
 	log.SetOutput(os.Stdout)
 }
