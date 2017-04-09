@@ -31,18 +31,18 @@ func main() {
 	openDb()
 	setupDb()
 
-	arg := os.Args[1]
-	if arg == "bggScraper" {
+	operatingMode = os.Args[1]
+	if operatingMode == "bggScraper" {
 		log.Println("starting scraper")
 		startScraperService()
-	} else if arg == "bggService" {
+	} else if operatingMode == "bggService" {
 		log.Println("starting query service")
 		startQueryService()
 	} else {
 		log.Println("no commands found, shutting down")
 	}
 
-	operatingMode = os.Args[1]
+
 
 	//closeDb()
 }
