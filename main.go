@@ -25,6 +25,7 @@ var exploredUsers map[int]bool
 var collectionInsertStmt *sql.Stmt
 var gameMetaInsertStmt *sql.Stmt
 var currentForumListId int
+var operatingMode string
 
 func main() {
 	openDb()
@@ -41,6 +42,7 @@ func main() {
 		log.Println("no commands found, shutting down")
 	}
 
+	operatingMode = os.Args[1]
 
 	//closeDb()
 }
@@ -48,9 +50,14 @@ func main() {
 // SERVICE SECTION
 func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()  // parse arguments, you have to call this by yourself
-	userId := r.FormValue("userId")
-	fmt.Fprint(w, "what would I recommend for user ", userId, "...\n")
-	for _, rec := range recommend(userId) {
+	userName := r.FormValue("userName")
+	userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", userName)
+	if (!isUserInDb(userName)) {
+		getXml(userUrl, createUserProcessor(false))
+	}
+
+	fmt.Fprint(w, "what would I recommend for ", userName, "...\n")
+	for _, rec := range recommend(userName) {
 		fmt.Fprint(w, "I would recommend: ", rec.Name, "\n")
 	}
 }
@@ -156,40 +163,48 @@ func processThread(bytes []byte) {
 	}
 	for _,article := range thread.Articles.Articles {
 		userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", article.Author)
-		getXml(userUrl, processUser)
+		getXml(userUrl, createUserProcessor(true))
 	}
 }
 
-func processUser(bytes []byte) {
-	var user User
-	err := xml.Unmarshal(bytes, &user)
-	if err != nil {
-		logToFile("error unmarshalling user xml, aborting")
-		return
-	}
-	if len(user.Name) < 1 {
-		logToFile("skipping empty user")
-		return
-	}
-	if _, exists := exploredUsers[user.Id]; exists {
-		return
-	} else {
-		exploredUsers[user.Id] = true
-	}
+func createUserProcessor(exploreBuddies bool) XmlProcessor {
+	return func (bytes []byte) {
+		var user User
+		err := xml.Unmarshal(bytes, &user)
+		if err != nil {
+			logToFile("error unmarshalling user xml, aborting")
+			return
+		}
+		if len(user.Name) < 1 {
+			logToFile("skipping empty user")
+			return
+		}
+		if exploredUsers != nil {
+			if _, exists := exploredUsers[user.Id]; exists {
+				return
+			} else {
+				exploredUsers[user.Id] = true
+			}
+		}
 
-	// get the users collection
-	logToFile("process user: " + user.Name)
-	collectionUrl := fmt.Sprintf(baseUrlApi1 + "/collection/%s", user.Name)
-	getXml(collectionUrl, createCollectionProcessor(user))
+		// get the users collection
+		logToFile("process user: " + user.Name)
+		collectionUrl := fmt.Sprintf(baseUrlApi1 + "/collection/%s", user.Name)
+		getXml(collectionUrl, createCollectionProcessor(user))
 
 
-	// explore user friends
-	for _,buddy := range user.Buddies.Buddies {
-		logToFile("get buddies xml")
-		buddyUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", buddy.Name)
-		getXml(buddyUrl, processUser)
+		// explore user friends
+		if (exploreBuddies) {
+			for _, buddy := range user.Buddies.Buddies {
+				logToFile("get buddies xml")
+				buddyUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", buddy.Name)
+				getXml(buddyUrl, createUserProcessor(true))
+			}
+		}
 	}
 }
+
+
 
 func createCollectionProcessor(user User) XmlProcessor {
 	return func (bytes []byte) {
@@ -204,7 +219,7 @@ func createCollectionProcessor(user User) XmlProcessor {
 			insertCollection(user, item)
 			userRatings[strconv.Itoa(item.ObjectId)] = item.Stats.Rating.Value
 		}
-		insertUserRatings(strconv.Itoa(user.Id), userRatings)
+		insertUserRatings(user.Name, strconv.Itoa(user.Id), userRatings)
 	}
 }
 
@@ -326,7 +341,7 @@ func setupDb() {
 		panic("could not create db")
 	}
 
-	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_ratings(userId INT NOT NULL PRIMARY KEY, ratingsJson LONGTEXT);")
+	_, err = sqlDb.Exec("CREATE TABLE IF NOT EXISTS user_ratings(userName VARCHAR(200) NOT NULL PRIMARY KEY, userId INT NOT NULL, ratingsJson LONGTEXT);")
 	if err != nil {
 		logToFile(err)
 		panic("could not create db")
@@ -371,7 +386,7 @@ func setupDb() {
 	}
 }
 
-func insertUserRatings(userId string, ratings map[string]int) {
+func insertUserRatings(userName string, userId string, ratings map[string]int) {
 	log.Println(ratings)
 	json, err := json.Marshal(ratings)
 	if err != nil {
@@ -379,20 +394,39 @@ func insertUserRatings(userId string, ratings map[string]int) {
 		return
 	}
 	log.Println(json)
-	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userId, ratingsJson) VALUES(?,?)", userId, string(json))
+	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userName, userId, ratingsJson) VALUES(?,?,?)",userName, userId, string(json))
 	if err != nil {
 		logToFile(err)
 	}
 }
 
+func isUserInDb(userName string) bool {
+	stmt, err := sqlDb.Prepare("select userName from user_ratings where userName = ? limit 1")
+	if err != nil {
+		logToFile(err)
+		return false
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(userName)
+	if err != nil {
+		logToFile(err)
+		return false
+	}
+	ret := false
+	for rows.Next() {
+		ret = true
+	}
+	return ret
+}
+
 type UserRatingsBundle struct {
-	userId string
+	userName string
 	ratings map[string]int
 }
 
 func fetchUserRatingsSample() []UserRatingsBundle {
 	resultSet := make([]UserRatingsBundle, 0)
-	stmt, err := sqlDb.Prepare("select userId, ratingsJson from user_ratings limit 1000")
+	stmt, err := sqlDb.Prepare("select userName, ratingsJson from user_ratings limit 1000")
 	if err != nil {
 		logToFile(err)
 		return resultSet
@@ -409,11 +443,11 @@ func fetchUserRatingsSample() []UserRatingsBundle {
 
 func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []UserRatingsBundle {
 	var (
-		userId string
+		userName string
 		userRatings string
 	)
 	for rows.Next() {
-		err := rows.Scan(&userId, &userRatings)
+		err := rows.Scan(&userName, &userRatings)
 		if err != nil {
 			logToFile(err)
 			return resultSet
@@ -424,7 +458,7 @@ func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []User
 		}
 		res := map[string]int{}
 		json.Unmarshal([]byte(userRatings), &res)
-		resultSet = append(resultSet, UserRatingsBundle{userId, res})
+		resultSet = append(resultSet, UserRatingsBundle{userName, res})
 	}
 	err := rows.Err()
 	if err != nil {
@@ -440,7 +474,7 @@ type GameRecommendation struct {
 	Rating int
 }
 
-func recommend(userId string) []GameRecommendation {
+func recommend(userName string) []GameRecommendation {
 	// Accessing a new regommend table for the first time will create it.
 	games := regommend.Table("games")
 
@@ -452,10 +486,10 @@ func recommend(userId string) []GameRecommendation {
 				ratings[gameId] = float64(gameRating)
 			}
 		}
-		games.Add(bundle.userId, ratings)
+		games.Add(bundle.userName, ratings)
 	}
 
-	recs, _ := games.Recommend(userId)
+	recs, _ := games.Recommend(userName)
 	recSize := int(math.Min(5,float64(len(recs))))
 	recList := make(map[int]GameRecommendation)
 
@@ -528,7 +562,7 @@ func logToFile(s ...interface{}) {
 	if _, err := os.Stat("logs"); os.IsNotExist(err) {
 		os.Mkdir("logs", os.FileMode(0777))
 	}
-	f, err := os.OpenFile("logs/log-"+dateString + ".txt", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0777)
+	f, err := os.OpenFile("logs/log-"+ operatingMode + "-" +dateString + ".txt", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0777)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
