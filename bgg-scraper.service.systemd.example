@@ -1,11 +1,11 @@
 [Unit]
 Description=The BGG Scraper
-ConditionPathExists=/root/work/go/src/github.com/bggscraper
+ConditionPathExists=/root/work/go/src/github.com/bggscraper/build
 
 [Service]
 Restart=always
 RestartSec=3
-ExecStart=/root/work/go/src/github.com/bggscraper/restart-scraper.sh
+ExecStart=/root/work/go/src/github.com/bggscraper/build/main bggScraper &
 
 [Install]
 WantedBy=multi-user.target
