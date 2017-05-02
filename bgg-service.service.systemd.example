@@ -1,0 +1,11 @@
+[Unit]
+Description=The BGG Web Service
+ConditionPathExists=/root/work/go/src/github.com/bggscraper/build
+
+[Service]
+Restart=always
+RestartSec=3
+ExecStart=/root/work/go/src/github.com/bggscraper/build/main bggService &
+
+[Install]
+WantedBy=multi-user.target
