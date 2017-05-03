@@ -226,11 +226,19 @@ func createCollectionProcessor(user User) XmlProcessor {
 type XmlProcessor func(bytes []byte)
 
 func getXml(url string, processor XmlProcessor) {
+	getXmlRecursive(url, processor, 0)
+}
+
+func getXmlRecursive(url string, processor XmlProcessor, retries int) {
+	if (retries > 100) {
+		logToFile("gave up after too many retries")
+		return;
+	}
 	// throttle requests a little
 	time.Sleep(5 * time.Second)
 	response, err := http.Get(url)
 	if err != nil {
-		retryGetXml(err, "error getting response - waiting for retry", url, processor, 30)
+		retryGetXml(err, "error getting response - waiting for retry", url, processor, 30, retries)
 		return
 	} else {
 		defer response.Body.Close()
@@ -238,26 +246,26 @@ func getXml(url string, processor XmlProcessor) {
 		if statusCode == 200 {
 			body, err := ioutil.ReadAll(response.Body)
 			if err != nil {
-				retryGetXml(err, "error reading response - waiting for retry", url, processor, 30)
+				retryGetXml(err, "error reading response - waiting for retry", url, processor, 30, retries)
 			} else {
 				processor(body)
 			}
 		} else if statusCode == 202 {
-			retryGetXml(err, "received 202 - waiting for retry", url, processor, 5)
+			retryGetXml(err, "received 202 - waiting for retry", url, processor, 5, retries)
 		} else if statusCode == 400 {
 			logToFile("received error 400 - aborting")
 		} else {
-			retryGetXml(err, fmt.Sprintf("server error %d - waiting for retry", statusCode), url, processor, 30)
+			retryGetXml(err, fmt.Sprintf("server error %d - waiting for retry", statusCode), url, processor, 30, retries)
 		}
 	}
 }
 
-func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor, sleepSeconds int) {
+func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor, sleepSeconds int, retries int) {
 	if err != nil {
 		logToFile(err, retryMsg)
 	}
 	time.Sleep(time.Duration(sleepSeconds) * time.Second)
-	getXml(url, processor)
+	getXmlRecursive(url, processor, 1 + retries)
 }
 func openDb() {
 	userPw := "root"
