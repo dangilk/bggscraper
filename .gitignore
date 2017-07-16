@@ -31,3 +31,4 @@ _testmain.go
 
 # other
 nohup.out
+.DS_Store
