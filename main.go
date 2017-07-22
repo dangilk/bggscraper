@@ -1,26 +1,29 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
-	"log"
-	"net/http"
-	"io/ioutil"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"time"
-	"os"
-	"bufio"
-	"strconv"
-	"github.com/muesli/regommend"
-	"encoding/json"
+	"io/ioutil"
+	"log"
 	"math"
+	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/muesli/regommend"
 )
 
 var sqlDb *sql.DB
+
 const baseUrlApi2 = "https://www.boardgamegeek.com/xmlapi2"
 const baseUrlApi1 = "https://www.boardgamegeek.com/xmlapi"
+
 var exploredUsers map[int]bool
 var collectionInsertStmt *sql.Stmt
 var gameMetaInsertStmt *sql.Stmt
@@ -41,18 +44,15 @@ func main() {
 	} else {
 		log.Println("no commands found, shutting down")
 	}
-
-
-
 	//closeDb()
 }
 
 // SERVICE SECTION
 func topSuggestions(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()  // parse arguments, you have to call this by yourself
+	r.ParseForm() // parse arguments, you have to call this by yourself
 	userName := r.FormValue("userName")
-	userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", userName)
-	if (!isUserInDb(userName)) {
+	userUrl := fmt.Sprintf(baseUrlApi2+"/user?name=%s", userName)
+	if !isUserInDb(userName) {
 		getXml(userUrl, createUserProcessor(false))
 	}
 
@@ -64,7 +64,7 @@ func topSuggestions(w http.ResponseWriter, r *http.Request) {
 
 func startQueryService() {
 	http.HandleFunc("/topSuggestions", topSuggestions) // set router
-	err := http.ListenAndServe(":9090", nil) // set listen port
+	err := http.ListenAndServe(":9090", nil)           // set listen port
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
@@ -91,7 +91,7 @@ func updateCurrentForumList(forumId int) {
 }
 
 func getCurrentForumList() int {
-	ret := 0;
+	ret := 0
 	var (
 		forumId int
 	)
@@ -120,7 +120,7 @@ func getCurrentForumList() int {
 // get a forumlist, then get its forums, then get its threads, then get its articles, and finally get users from articles
 func getUsersFromForumList(forumId int) {
 	logToFile("processing forumlist with id: " + strconv.Itoa(forumId))
-	forumListUrl := fmt.Sprintf(baseUrlApi2 + "/forumlist?id=%d&type=thing", forumId)
+	forumListUrl := fmt.Sprintf(baseUrlApi2+"/forumlist?id=%d&type=thing", forumId)
 	getXml(forumListUrl, processForumList)
 }
 
@@ -131,8 +131,8 @@ func processForumList(bytes []byte) {
 		logToFile("error unmarshalling forumlist xml, aborting")
 		return
 	}
-	for _,forum := range forumList.Forums {
-		forumUrl := fmt.Sprintf(baseUrlApi2 + "/forum?id=%d", forum.Id)
+	for _, forum := range forumList.Forums {
+		forumUrl := fmt.Sprintf(baseUrlApi2+"/forum?id=%d", forum.Id)
 		getXml(forumUrl, processForum)
 	}
 }
@@ -148,8 +148,8 @@ func processForum(bytes []byte) {
 		// reset forum list
 		currentForumListId = 0
 	}
-	for _,thread := range forum.Threads.Threads {
-		threadUrl := fmt.Sprintf(baseUrlApi2 + "/thread?id=%d", thread.Id)
+	for _, thread := range forum.Threads.Threads {
+		threadUrl := fmt.Sprintf(baseUrlApi2+"/thread?id=%d", thread.Id)
 		getXml(threadUrl, processThread)
 	}
 }
@@ -161,14 +161,14 @@ func processThread(bytes []byte) {
 		logToFile("error unmarshalling thread xml, aborting")
 		return
 	}
-	for _,article := range thread.Articles.Articles {
-		userUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", article.Author)
+	for _, article := range thread.Articles.Articles {
+		userUrl := fmt.Sprintf(baseUrlApi2+"/user?name=%s", article.Author)
 		getXml(userUrl, createUserProcessor(true))
 	}
 }
 
 func createUserProcessor(exploreBuddies bool) XmlProcessor {
-	return func (bytes []byte) {
+	return func(bytes []byte) {
 		var user User
 		err := xml.Unmarshal(bytes, &user)
 		if err != nil {
@@ -189,25 +189,22 @@ func createUserProcessor(exploreBuddies bool) XmlProcessor {
 
 		// get the users collection
 		logToFile("process user: " + user.Name)
-		collectionUrl := fmt.Sprintf(baseUrlApi1 + "/collection/%s", user.Name)
+		collectionUrl := fmt.Sprintf(baseUrlApi1+"/collection/%s", user.Name)
 		getXml(collectionUrl, createCollectionProcessor(user))
 
-
 		// explore user friends
-		if (exploreBuddies) {
+		if exploreBuddies {
 			for _, buddy := range user.Buddies.Buddies {
 				logToFile("get buddies xml")
-				buddyUrl := fmt.Sprintf(baseUrlApi2 + "/user?name=%s", buddy.Name)
+				buddyUrl := fmt.Sprintf(baseUrlApi2+"/user?name=%s", buddy.Name)
 				getXml(buddyUrl, createUserProcessor(true))
 			}
 		}
 	}
 }
 
-
-
 func createCollectionProcessor(user User) XmlProcessor {
-	return func (bytes []byte) {
+	return func(bytes []byte) {
 		var collectionItems CollectionItems
 		err := xml.Unmarshal(bytes, &collectionItems)
 		if err != nil {
@@ -215,7 +212,7 @@ func createCollectionProcessor(user User) XmlProcessor {
 			return
 		}
 		userRatings := make(map[string]int)
-		for _,item := range collectionItems.Items {
+		for _, item := range collectionItems.Items {
 			insertCollection(user, item)
 			userRatings[strconv.Itoa(item.ObjectId)] = item.Stats.Rating.Value
 		}
@@ -230,9 +227,9 @@ func getXml(url string, processor XmlProcessor) {
 }
 
 func getXmlRecursive(url string, processor XmlProcessor, retries int) {
-	if (retries > 100) {
+	if retries > 100 {
 		logToFile("gave up after too many retries")
-		return;
+		return
 	}
 	// throttle requests a little
 	time.Sleep(5 * time.Second)
@@ -265,7 +262,7 @@ func retryGetXml(err error, retryMsg string, url string, processor XmlProcessor,
 		logToFile(err, retryMsg)
 	}
 	time.Sleep(time.Duration(sleepSeconds) * time.Second)
-	getXmlRecursive(url, processor, 1 + retries)
+	getXmlRecursive(url, processor, 1+retries)
 }
 func openDb() {
 	userPw := "root"
@@ -291,6 +288,7 @@ func openDb() {
 	err = db.Ping()
 	if err != nil {
 		// do something here
+		panic("db should be open, but isnt")
 	}
 	sqlDb = db
 }
@@ -301,10 +299,10 @@ func closeDb() {
 
 func insertCollection(user User, collection CollectionItem) {
 	_, err := collectionInsertStmt.Exec(collection.Id, user.Id, user.Name, collection.Name, collection.NumPlays,
-	collection.Status.Own, collection.Status.PrevOwned, collection.Status.ForTrade, collection.Status.Want,
-	collection.Status.WantToPlay, collection.Status.WantToBuy, collection.Status.WishList, collection.Status.WishListPriority,
-	collection.Status.PreOrdered, collection.Status.LastModified,
-	collection.Stats.Rating.Value)
+		collection.Status.Own, collection.Status.PrevOwned, collection.Status.ForTrade, collection.Status.Want,
+		collection.Status.WantToPlay, collection.Status.WantToBuy, collection.Status.WishList, collection.Status.WishListPriority,
+		collection.Status.PreOrdered, collection.Status.LastModified,
+		collection.Stats.Rating.Value)
 	if err != nil {
 		logToFile(err)
 		return
@@ -402,7 +400,7 @@ func insertUserRatings(userName string, userId string, ratings map[string]int) {
 		return
 	}
 	log.Println(json)
-	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userName, userId, ratingsJson) VALUES(?,?,?)",userName, userId, string(json))
+	_, err = sqlDb.Exec("REPLACE INTO user_ratings(userName, userId, ratingsJson) VALUES(?,?,?)", userName, userId, string(json))
 	if err != nil {
 		logToFile(err)
 	}
@@ -429,7 +427,7 @@ func isUserInDb(userName string) bool {
 
 type UserRatingsBundle struct {
 	userName string
-	ratings map[string]int
+	ratings  map[string]int
 }
 
 func fetchUserRatingsSample() []UserRatingsBundle {
@@ -451,7 +449,7 @@ func fetchUserRatingsSample() []UserRatingsBundle {
 
 func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []UserRatingsBundle {
 	var (
-		userName string
+		userName    string
 		userRatings string
 	)
 	for rows.Next() {
@@ -477,8 +475,8 @@ func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []User
 }
 
 type GameRecommendation struct {
-	Id int
-	Name string
+	Id     int
+	Name   string
 	Rating int
 }
 
@@ -498,10 +496,10 @@ func recommend(userName string) []GameRecommendation {
 	}
 
 	recs, _ := games.Recommend(userName)
-	recSize := int(math.Min(5,float64(len(recs))))
+	recSize := int(math.Min(5, float64(len(recs))))
 	recList := make(map[int]GameRecommendation)
 
-	for i := 0; i < recSize ; i++ {
+	for i := 0; i < recSize; i++ {
 		if str, ok := recs[i].Key.(string); ok {
 			id, _ := strconv.Atoi(str)
 			recList[id] = GameRecommendation{Id: id, Rating: int(recs[i].Distance)}
@@ -519,7 +517,7 @@ func recommend(userName string) []GameRecommendation {
 
 func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecommendation {
 	var (
-		id int
+		id       int
 		gameName string
 	)
 	ret := make(map[int]GameRecommendation)
@@ -527,7 +525,7 @@ func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecomm
 	for k := range recMap {
 		keys = append(keys, k)
 	}
-	if (len(keys) < 1) {
+	if len(keys) < 1 {
 		return recMap
 	}
 	stmt, err := sqlDb.Prepare("select id, gameName from game_metadata where id IN(?" + strings.Repeat(",?", len(keys)-1) + ")")
@@ -570,7 +568,7 @@ func logToFile(s ...interface{}) {
 	if _, err := os.Stat("logs"); os.IsNotExist(err) {
 		os.Mkdir("logs", os.FileMode(0777))
 	}
-	f, err := os.OpenFile("logs/log-"+ operatingMode + "-" +dateString + ".txt", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0777)
+	f, err := os.OpenFile("logs/log-"+operatingMode+"-"+dateString+".txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
