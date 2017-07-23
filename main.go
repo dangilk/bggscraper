@@ -276,7 +276,7 @@ func openDb() {
 			userPw += ":" + line
 		}
 	}
-	open := userPw + "@tcp(0.0.0.0:3307)/hello"
+	open := userPw + "@tcp(172.18.0.2:3307)/hello"
 	println(open)
 
 	db, err := sql.Open("mysql", open)
