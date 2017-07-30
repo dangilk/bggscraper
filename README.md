@@ -11,13 +11,15 @@ Enable the services with `systemctl enable bgg-scraper`, start them with `system
 
 Setting up inside docker:
 set up a container network:
-`docker network create testnetwork`
+`docker network create bggnetwork`
 
 put a local password file on the local host e.g.
 `/private/var/mysqlpw.txt` -> `root`
 
 setup mysql container: 
-`docker run --net testnetwork --name mysqldb -e MYSQL_ROOT_PASSWORD=root -d mysql:5.7` * make sure to actually create the DB after this!
+`docker run --net bggnetwork --name mysqldb -e MYSQL_ROOT_PASSWORD=root -d mysql:5.7` * make sure to actually create the DB after this! you can use `docker exec -it mysqldb bash` for this
 
-setup go container. map pw file to container, start on our network, clean up container after running, then pull down from github and build/run
-`docker run -v /private/var:/root/work --net testnetwork --rm golang sh -c "go get github.com/dangilk/bggscraper/... && exec bggscraper bggScraper"`
+setup go container. map pw file to container, detach container, start on our network, clean up container after running, set the restart policy, then pull down from github and build/run
+`docker run -v /private/var:/root/work -d --net bggnetwork --restart unless-stopped --rm golang sh -c "go get github.com/dangilk/bggscraper/... && exec bggscraper bggScraper"`
+
+similarly, start the http service. note that we expose port 9090 for incoming traffic: `docker run -v /private/var:/root/work -d -p 9090:9090 --restart unless-stopped --net bggnetwork --rm golang sh -c "go get github.com/dangilk/bggscraper/... && exec bggscraper bggService"`
