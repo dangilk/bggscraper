@@ -1,7 +1,6 @@
-#kill $(ps aux | grep '[b]ggService' | awk '{print $2}')
-#kill $(ps aux | grep '[b]ggScraper' | awk '{print $2}')
-#nohup go run *.go bggService &
-#nohup go run *.go bggScraper &
-# ^ that stuff is old, i think this will work...
-systemctl restart bgg-scraper
-systemctl restart bgg-service
+docker stop bggService
+docker stop bggScraper
+docker rm bggService
+docker rm bggScraper
+docker run -v /private/var:/root/work -d --net bggnetwork --name bggScraper --restart unless-stopped golang sh -c "go get github.com/dangilk/bggscraper/... && exec bggscraper bggScraper"
+docker run -v /private/var:/root/work -d -p 9090:9090 --restart unless-stopped --net bggnetwork --name bggService golang sh -c "go get github.com/dangilk/bggscraper/... && exec bggscraper bggService"

@@ -17,7 +17,7 @@ put a local password file on the local host e.g.
 `/private/var/mysqlpw.txt` -> `root`
 
 setup mysql container: 
-`docker run --net bggnetwork --name mysqldb -e MYSQL_ROOT_PASSWORD=root -d mysql:5.7` * make sure to actually create the DB after this! you can use `docker exec -it mysqldb bash` for this
+`docker run --net bggnetwork --name mysqldb -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=hello -d --restart unless-stopped mysql:8.0.2` * make sure to set the root password to the real password (not "root")
 
 setup go container. map pw file to container, detach container, start on our network, set the restart policy, then pull down from github and build/run
 `docker run -v /private/var:/root/work -d --net bggnetwork --name bggScraper --restart unless-stopped golang sh -c "go get github.com/dangilk/bggscraper/... && exec bggscraper bggScraper"`
