@@ -16,6 +16,9 @@ set up a container network:
 put a local password file on the local host e.g.
 `/private/var/mysqlpw.txt` -> `root`
 
+add some swap space for the mysql image. see these instructions:
+https://www.digitalocean.com/community/tutorials/how-to-configure-virtual-memory-swap-file-on-a-vps
+
 setup mysql container: 
 `docker run --net bggnetwork --name mysqldb -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=hello -d --restart unless-stopped mysql:8.0.2` * make sure to set the root password to the real password (not "root")
 

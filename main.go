@@ -386,7 +386,7 @@ func setupDb() {
 		"image, subType, " +
 		"minPlayers, maxPlayers, minPlaytime, maxPlaytime," +
 		"playingTime, numOwned, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
-		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		logToFile(err)
 		panic("could not create db")
