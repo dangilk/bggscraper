@@ -57,9 +57,9 @@ func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprint(w, "what would I recommend for ", userName, "...\n")
-	for _, rec := range recommend(userName) {
-		fmt.Fprint(w, "I would recommend: ", rec.Name, "\n")
-	}
+	rec := recommend(userName)
+	serialized, _ := json.Marshal(rec)
+	fmt.Fprint(w, serialized /*"I would recommend: ", rec.Name, "\n"*/)
 }
 
 func startQueryService() {
@@ -308,7 +308,7 @@ func insertCollection(user User, collection CollectionItem) {
 		return
 	}
 	// update metadata
-	_, err = gameMetaInsertStmt.Exec(collection.ObjectId, collection.Name, collection.YearPublished, collection.SubType,
+	_, err = gameMetaInsertStmt.Exec(collection.ObjectId, collection.Name, collection.YearPublished, collection.Image, collection.SubType,
 		collection.Stats.MinPlayers, collection.Stats.MaxPlayers,
 		collection.Stats.MinPlaytime, collection.Stats.MaxPlaytime, collection.Stats.PlayingTime, collection.Stats.NumOwned,
 		collection.Stats.Rating.UsersRated.Value, collection.Stats.Rating.AverageRating.Value,
@@ -356,6 +356,7 @@ func setupDb() {
 		"id INT NOT NULL PRIMARY KEY, " +
 		"gameName VARCHAR(1000) NOT NULL, " +
 		"yearPublished INT, " +
+		"image VARCHAR(1000) NOT NULL," +
 		"subType VARCHAR(100), " +
 		"minPlayers INT, " +
 		"maxPlayers INT, " +
@@ -382,7 +383,7 @@ func setupDb() {
 		panic("could not create db")
 	}
 	gameMetaInsertStmt, err = sqlDb.Prepare("REPLACE INTO game_metadata(id, gameName, yearPublished," +
-		"subType, " +
+		"image, subType, " +
 		"minPlayers, maxPlayers, minPlaytime, maxPlaytime," +
 		"playingTime, numOwned, ratingCount, averageRating, bayesAverageRating, stdDevRating, medianRating) " +
 		"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
@@ -517,8 +518,12 @@ func recommend(userName string) []GameRecommendation {
 
 func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecommendation {
 	var (
-		id       int
-		gameName string
+		id            int
+		gameName      string
+		yearPublished int
+		image         string
+		minPlayers    int
+		maxPlayers    int
 	)
 	ret := make(map[int]GameRecommendation)
 	keys := make([]interface{}, 0, len(recMap))
@@ -528,7 +533,7 @@ func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecomm
 	if len(keys) < 1 {
 		return recMap
 	}
-	stmt, err := sqlDb.Prepare("select id, gameName from game_metadata where id IN(?" + strings.Repeat(",?", len(keys)-1) + ")")
+	stmt, err := sqlDb.Prepare("select id, gameName, yearPublished, image, minPlayers, maxPlayers from game_metadata where id IN(?" + strings.Repeat(",?", len(keys)-1) + ")")
 	if err != nil {
 		logToFile(err)
 		stmt.Close()
@@ -544,7 +549,7 @@ func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecomm
 	defer rows.Close()
 
 	for rows.Next() {
-		err := rows.Scan(&id, &gameName)
+		err := rows.Scan(&id, &gameName, &yearPublished, &image, &minPlayers, &maxPlayers)
 		if err != nil {
 			logToFile(err)
 			continue

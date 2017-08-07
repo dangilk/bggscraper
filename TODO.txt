@@ -1,0 +1,2 @@
+set the docker network creation to a static ip so it works on dev and prod
+get the new code working (writing to json) on dev so we can push to prod
