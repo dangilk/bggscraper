@@ -476,9 +476,13 @@ func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []User
 }
 
 type GameRecommendation struct {
-	Id     int
-	Name   string
-	Rating int
+	Id            int
+	Name          string
+	YearPublished int
+	Image         string
+	MinPlayers    int
+	MaxPlayers    int
+	Rating        int
 }
 
 func recommend(userName string) []GameRecommendation {
@@ -554,7 +558,7 @@ func getGameMetadataForIds(recMap map[int]GameRecommendation) map[int]GameRecomm
 			logToFile(err)
 			continue
 		}
-		ret[id] = GameRecommendation{id, gameName, recMap[id].Rating}
+		ret[id] = GameRecommendation{id, gameName, yearPublished, image, minPlayers, maxPlayers, recMap[id].Rating}
 	}
 	err = rows.Err()
 	if err != nil {
