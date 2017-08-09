@@ -508,7 +508,7 @@ func recommend(userName string) []GameRecommendation {
 	sort.Slice(recs, func(i, j int) bool {
 		return recs[j].Distance < recs[i].Distance
 	})
-	recSize := int(math.Min(5, float64(len(recs))))
+	recSize := int(math.Min(10, float64(len(recs))))
 	recList := make(map[int]GameRecommendation)
 
 	for i := 0; i < recSize; i++ {
