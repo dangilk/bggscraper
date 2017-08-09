@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,14 +53,14 @@ func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm() // parse arguments, you have to call this by yourself
 	userName := r.FormValue("userName")
 	userUrl := fmt.Sprintf(baseUrlApi2+"/user?name=%s", userName)
-	if !isUserInDb(userName) {
-		getXml(userUrl, createUserProcessor(false))
-	}
+	//if !isUserInDb(userName) {
+	getXml(userUrl, createUserProcessor(false))
+	//}
 
 	fmt.Fprint(w, "what would I recommend for ", userName, "...\n")
 	rec := recommend(userName)
-	serialized, _ := json.Marshal(rec)
-	fmt.Fprint(w, serialized /*"I would recommend: ", rec.Name, "\n"*/)
+	bytes, _ := json.Marshal(rec)
+	fmt.Fprint(w, string(bytes) /*"I would recommend: ", rec.Name, "\n"*/)
 }
 
 func startQueryService() {
@@ -431,15 +432,15 @@ type UserRatingsBundle struct {
 	ratings  map[string]int
 }
 
-func fetchUserRatingsSample() []UserRatingsBundle {
+func fetchUserRatingsSample(userName string) []UserRatingsBundle {
 	resultSet := make([]UserRatingsBundle, 0)
-	stmt, err := sqlDb.Prepare("select userName, ratingsJson from user_ratings limit 1000")
+	stmt, err := sqlDb.Prepare("select userName, ratingsJson from user_ratings union select userName, ratingsJson from user_ratings where userName = ? order by RAND() limit 1000")
 	if err != nil {
 		logToFile(err)
 		return resultSet
 	}
 	defer stmt.Close()
-	rows, err := stmt.Query()
+	rows, err := stmt.Query(userName)
 	if err != nil {
 		logToFile(err)
 		return resultSet
@@ -489,7 +490,7 @@ func recommend(userName string) []GameRecommendation {
 	// Accessing a new regommend table for the first time will create it.
 	games := regommend.Table("games")
 
-	sampleRatings := fetchUserRatingsSample()
+	sampleRatings := fetchUserRatingsSample(userName)
 	for _, bundle := range sampleRatings {
 		ratings := make(map[interface{}]float64)
 		for gameId, gameRating := range bundle.ratings {
@@ -498,9 +499,15 @@ func recommend(userName string) []GameRecommendation {
 			}
 		}
 		games.Add(bundle.userName, ratings)
+		if bundle.userName == "ntgarthunk" {
+			logToFile("go my info")
+		}
 	}
 
 	recs, _ := games.Recommend(userName)
+	sort.Slice(recs, func(i, j int) bool {
+		return recs[j].Distance < recs[i].Distance
+	})
 	recSize := int(math.Min(5, float64(len(recs))))
 	recList := make(map[int]GameRecommendation)
 
