@@ -475,13 +475,13 @@ func parseUserRatingsQuery(rows *sql.Rows, resultSet []UserRatingsBundle) []User
 }
 
 type GameRecommendation struct {
-	Id            int
-	Name          string
-	YearPublished int
-	Image         string
-	MinPlayers    int
-	MaxPlayers    int
-	Rating        int
+	Id            int    `json:"id"`
+	Name          string `json:"name"`
+	YearPublished int    `json:"yearPublished"`
+	Image         string `json:"image"`
+	MinPlayers    int    `json:"minPlayers"`
+	MaxPlayers    int    `json:"maxPlayers"`
+	Rating        int    `json:"rating"`
 }
 
 func recommend(userName string) []GameRecommendation {
