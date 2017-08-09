@@ -56,8 +56,6 @@ func topSuggestions(w http.ResponseWriter, r *http.Request) {
 	//if !isUserInDb(userName) {
 	getXml(userUrl, createUserProcessor(false))
 	//}
-
-	fmt.Fprint(w, "what would I recommend for ", userName, "...\n")
 	rec := recommend(userName)
 	bytes, _ := json.Marshal(rec)
 	fmt.Fprint(w, string(bytes) /*"I would recommend: ", rec.Name, "\n"*/)
